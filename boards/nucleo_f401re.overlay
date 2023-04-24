@@ -1,0 +1,12 @@
+
+&i2c1 {
+	hts221@5f {
+		compatible = "st,hts221";
+		reg = <0x5f>;
+	};
+	lis3dh-accel@18 {
+		compatible = "st,lis2dh";
+		reg = <0x18>;
+		irq-gpios = <&gpiob 4 GPIO_ACTIVE_HIGH>;
+	};
+};
