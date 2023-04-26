@@ -33,11 +33,12 @@ References
 
 -STEVAL-IDI003V2: http://www.st.com/en/evaluation-tools/steval-idi003v2.html
 
-Tested with Boards
-******************
+Compatible Boards
+*****************
 
 - ST Microelectronics STM32 Nucleo-F401RE
-- Nordic Semiconductor nRF52840
+- Nordic Semiconductor nRF52840-DK
+- Nordic Semiconductor nRF52832-DK
 - Espressif ESP32 Devkit
 - Espressif ESP32-C3 Devkit-M
 

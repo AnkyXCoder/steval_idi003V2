@@ -64,6 +64,8 @@ void main(void) {
     /* Erase previous */
     printf("\0033\014");
 
+    printf("Board: %s\n", CONFIG_BOARD);
+
     printf("STEVAL-IDI003V2 sensor dashboard\n\n");
 
     /* hts221 temperature */
