@@ -1,8 +1,3 @@
-/*
- * Copyright (c) 2017 Linaro Limited
- *
- * SPDX-License-Identifier: Apache-2.0
- */
 
 #include <stdio.h>
 #include <zephyr/device.h>
@@ -10,142 +5,87 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 
-static void process_sample(const struct device *dev) {
-  static unsigned int obs;
-  struct sensor_value temp, hum;
-  if (sensor_sample_fetch(dev) < 0) {
-    printf("Sensor sample update error\n");
-    return;
-  }
-
-  if (sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP, &temp) < 0) {
-    printf("Cannot read HTS221 temperature channel\n");
-    return;
-  }
-
-  if (sensor_channel_get(dev, SENSOR_CHAN_HUMIDITY, &hum) < 0) {
-    printf("Cannot read HTS221 humidity channel\n");
-    return;
-  }
-
-  ++obs;
-  printf("Observation:%u\n", obs);
-
-  /* display temperature */
-  printf("Temperature:%.1f C\n", sensor_value_to_double(&temp));
-
-  /* display humidity */
-  printf("Relative Humidity:%.1f%%\n", sensor_value_to_double(&hum));
-}
-
-static void fetch_and_display(const struct device *sensor) {
-  static unsigned int count;
-  struct sensor_value accel[3];
-  struct sensor_value temperature;
-  const char *overrun = "";
-  int rc = sensor_sample_fetch(sensor);
-
-  ++count;
-  if (rc == -EBADMSG) {
-    /* Sample overrun.  Ignore in polled mode. */
-    if (IS_ENABLED(CONFIG_LIS2DH_TRIGGER)) {
-      overrun = "[OVERRUN] ";
-    }
-    rc = 0;
-  }
-  if (rc == 0) {
-    rc = sensor_channel_get(sensor, SENSOR_CHAN_ACCEL_XYZ, accel);
-  }
-  if (rc < 0) {
-    printf("ERROR: Update failed: %d\n", rc);
-  } else {
-    printf("#%u @ %u ms: %sx %f , y %f , z %f", count, k_uptime_get_32(),
-           overrun, sensor_value_to_double(&accel[0]),
-           sensor_value_to_double(&accel[1]),
-           sensor_value_to_double(&accel[2]));
-  }
-
-  if (IS_ENABLED(CONFIG_LIS2DH_MEASURE_TEMPERATURE)) {
-    if (rc == 0) {
-      rc = sensor_channel_get(sensor, SENSOR_CHAN_DIE_TEMP, &temperature);
-      if (rc < 0) {
-        printf("\nERROR: Unable to read temperature:%d\n", rc);
-      } else {
-        printf(", t %f\n", sensor_value_to_double(&temperature));
-      }
-    }
-
-  } else {
-    printf("\n");
-  }
-}
-
-#ifdef CONFIG_LIS2DH_TRIGGER
-static void trigger_handler(const struct device *dev,
-                            const struct sensor_trigger *trig) {
-  fetch_and_display(dev);
-}
-#endif
-
 void main(void) {
+  struct sensor_value temp1, temp2, hum, press;
+  struct sensor_value accel[3];
 
-  const struct device *const dev = DEVICE_DT_GET_ONE(st_hts221);
+  const struct device *const hts221 = DEVICE_DT_GET_ONE(st_hts221);
+  const struct device *const lis3dh = DEVICE_DT_GET_ONE(st_lis3dh);
+  const struct device *const lps25hb = DEVICE_DT_GET_ONE(st_lps25hb_press);
 
-  if (!device_is_ready(dev)) {
-    printk("sensor: device not ready.\n");
+  if (!device_is_ready(hts221)) {
+    printk("%s: device is not ready.\n", hts221->name);
+    return;
+  }
+  if (!device_is_ready(lis3dh)) {
+    printf("%s: device is not ready.\n", lis3dh->name);
+    return;
+  }
+  if (!device_is_ready(lps25hb)) {
+    printf("%s: device is not ready.\n", lps25hb->name);
     return;
   }
 
-  const struct device *const sensor = DEVICE_DT_GET_ANY(st_lis2dh);
-
-  if (sensor == NULL) {
-    printf("No device found\n");
-    return 0;
-  }
-  if (!device_is_ready(sensor)) {
-    printf("Device %s is not ready\n", sensor->name);
-    return 0;
-  }
-
-#if CONFIG_LIS2DH_TRIGGER
-  {
-    struct sensor_trigger trig;
-    int rc;
-
-    trig.type = SENSOR_TRIG_DATA_READY;
-    trig.chan = SENSOR_CHAN_ACCEL_XYZ;
-
-    if (IS_ENABLED(CONFIG_LIS2DH_ODR_RUNTIME)) {
-      struct sensor_value odr = {
-          .val1 = 1,
-      };
-
-      rc = sensor_attr_set(sensor, trig.chan, SENSOR_ATTR_SAMPLING_FREQUENCY,
-                           &odr);
-      if (rc != 0) {
-        printf("Failed to set odr: %d\n", rc);
-        return 0;
-      }
-      printf("Sampling at %u Hz\n", odr.val1);
-    }
-
-    rc = sensor_trigger_set(sensor, &trig, trigger_handler);
-    if (rc != 0) {
-      printf("Failed to set trigger: %d\n", rc);
-      return 0;
-    }
-
-    printf("Waiting for triggers\n");
-    while (true) {
-      k_sleep(K_MSEC(2000));
-    }
-  }
-#else  /* CONFIG_LIS2DH_TRIGGER */
-  printf("Polling at 0.5 Hz\n");
   while (true) {
-    fetch_and_display(sensor);
-    process_sample(dev);
+    int ret;
+
+    /* Get sensor samples */
+
+    if (sensor_sample_fetch(hts221) < 0) {
+      printf("HTS221 Sensor sample update error\n");
+      return;
+    }
+    if (sensor_sample_fetch(lps25hb) < 0) {
+      printf("LPS25HB Sensor sample update error\n");
+      return;
+    }
+
+    ret = sensor_sample_fetch(lis3dh);
+    if (ret == -EBADMSG) {
+      ret = 0;
+    }
+
+    /* Get sensor data */
+
+    sensor_channel_get(hts221, SENSOR_CHAN_AMBIENT_TEMP, &temp1);
+    sensor_channel_get(hts221, SENSOR_CHAN_HUMIDITY, &hum);
+    sensor_channel_get(lps25hb, SENSOR_CHAN_PRESS, &press);
+    sensor_channel_get(lps25hb, SENSOR_CHAN_AMBIENT_TEMP, &temp2);
+
+    if (ret == 0) {
+      ret = sensor_channel_get(lis3dh, SENSOR_CHAN_ACCEL_XYZ, accel);
+      if (ret < 0) {
+        printf("LIS3DH: ERROR: Unable to read accelerometer data: %d\n", ret);
+      }
+    }
+
+    /* Display sensor data */
+
+    /* Erase previous */
+    printf("\0033\014");
+
+    printf("STEVAL-IDI003V2 sensor dashboard\n\n");
+
+    /* hts221 temperature */
+    printf("HTS221: Temperature: %.1f C\n", sensor_value_to_double(&temp1));
+
+    /* hts221 humidity */
+    printf("HTS221: Relative Humidity: %.1f%%\n", sensor_value_to_double(&hum));
+
+    /* lps25hb pressure */
+    printf("LPS25HB: Pressure:%.3f kpa\n", sensor_value_to_double(&press));
+
+    /* lps25hb temperature */
+    printf("LPS25HB: Temperature: %.1f C\n", sensor_value_to_double(&temp2));
+
+    if (ret == 0) {
+      /* lis3dh accelerometer */
+      printf("LIS3DH: Accel (m.s-2): x %f , y %f , z %f\n",
+             sensor_value_to_double(&accel[0]),
+             sensor_value_to_double(&accel[1]),
+             sensor_value_to_double(&accel[2]));
+    }
+
     k_sleep(K_MSEC(2000));
   }
-#endif /* CONFIG_LIS2DH_TRIGGER */
 }
